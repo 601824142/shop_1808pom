@@ -3,6 +3,7 @@ package com.qf.controller;
 import com.alibaba.dubbo.config.annotation.Reference;
 import com.google.gson.Gson;
 import com.qf.entity.User;
+import com.qf.service.ICartService;
 import com.qf.service.IUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -28,6 +29,9 @@ public class LoginController {
     @Reference
     private IUserService userService;
 
+    @Reference
+    private ICartService cartService;
+
     @Autowired
     private RedisTemplate redisTemplate;
 
@@ -36,7 +40,8 @@ public class LoginController {
      * @return
      */
     @RequestMapping("/tologin")
-    public String toLogin(){
+    public String toLogin(String returnUrl, Model model){
+        model.addAttribute("returnUrl", returnUrl);
         return "login";
     }
 
@@ -46,13 +51,22 @@ public class LoginController {
      * @return
      */
     @RequestMapping("/login")
-    public String login(String username, String password, HttpServletResponse response, Model model){
+    public String login(
+            @CookieValue(value = "cart_token", required = false) String cartToken,
+            String username, String password, HttpServletResponse response, Model model, String returnUrl){
 
         //调用登录的服务
         User user = userService.queryByUserNameAndPassword(username, password);
 
         if(user != null){
+
+            //调用购物车服务 - 合并临时购物车
+            cartService.mergeCart(cartToken, user);
+
             //登录成功
+            if(returnUrl == null || "".equals(returnUrl)){
+                returnUrl = "http://localhost:8082";
+            }
 
             //记录登录状态
             String uuid = UUID.randomUUID().toString();
@@ -62,13 +76,13 @@ public class LoginController {
             //回写cookie到用户的浏览器
             Cookie cookie = new Cookie("login_token", uuid);
             cookie.setMaxAge(60 * 60 * 24 * 30);
-//            cookie.setPath("");
-//            cookie.setDomain("");
-//            cookie.setHttpOnly();
-//            cookie.setSecure();
+            cookie.setPath("/");
+//            cookie.setDomain(".jd.com");
+//            cookie.setHttpOnly(true);
+//            cookie.setSecure(true);
             response.addCookie(cookie);
 
-            return "redirect:http://localhost:8082";
+            return "redirect:" + returnUrl;
         }
 
         model.addAttribute("error", "用户名或者密码错误！");
